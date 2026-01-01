@@ -8,7 +8,7 @@ image: fizzy
 # Where to deploy fizzy
 servers:
   web:
-    - 159.223.212.195  # Set your server name here
+    - 148.230.113.65  # Set your server name here
 
 # How you connect to your server
 ssh:
@@ -17,7 +17,7 @@ ssh:
 # Automatic SSL
 proxy:
   ssl: true                # Set this to false if you *don't* want SSL
-  host: 159.223.212.195  # Set your server name here to use automatic SSL
+  host: 148.230.113.65  # Set your server name here to use automatic SSL
 
 # Your application configuration (secrets come from .kamal/secrets).
 env:
@@ -28,7 +28,7 @@ env:
     - SMTP_USERNAME
     - SMTP_PASSWORD
   clear:
-    BASE_URL: https://rslnt.fr # The public URL of your Fizzy instance
+    BASE_URL: https://wod.iamjp.fr # The public URL of your Fizzy instance
     MAILER_FROM_ADDRESS: jp@volt.fit # The email "from" address that Fizzy sends email from
     SMTP_ADDRESS: smtp.eu.mailgun.org #The SMTP server you'll use to send email
     MULTI_TENANT: true # Set to true to allow multiple accounts to sign up
