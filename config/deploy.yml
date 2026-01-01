@@ -8,7 +8,7 @@ image: fizzy
 # Where to deploy fizzy
 servers:
   web:
-    - fizzy.example.com  # Set your server name here
+    - 159.223.212.195  # Set your server name here
 
 # How you connect to your server
 ssh:
@@ -17,7 +17,7 @@ ssh:
 # Automatic SSL
 proxy:
   ssl: true                # Set this to false if you *don't* want SSL
-  host: fizzy.example.com  # Set your server name here to use automatic SSL
+  host: 159.223.212.195  # Set your server name here to use automatic SSL
 
 # Your application configuration (secrets come from .kamal/secrets).
 env:
