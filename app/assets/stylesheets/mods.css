@@ -6,3 +6,6 @@ margin-bottom: 1em;
 .card-content-homepage .action-text-content ul {
 padding-left: 1em;
 }
+.tray .card-content-homepage {
+    display: none;
+}
