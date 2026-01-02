@@ -75,6 +75,10 @@ USER 1000:1000
 COPY --chown=rails:rails --from=build "${BUNDLE_PATH}" "${BUNDLE_PATH}"
 COPY --chown=rails:rails --from=build /rails /rails
 
+# Deployment health check
+HEALTHCHECK --interval=5s --timeout=5s --start-period=30s --retries=3 \
+  CMD curl -f http://localhost:3000/up || exit 1
+
 # Entrypoint prepares the database.
 ENTRYPOINT ["/rails/bin/docker-entrypoint"]
 

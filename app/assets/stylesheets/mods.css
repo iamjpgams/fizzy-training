@@ -1,0 +1,8 @@
+.card-content-homepage {
+font-size: 1.3em;
+color: var(--card-content-color);
+margin-bottom: 1em;
+}
+.card-content-homepage .action-text-content ul {
+padding-left: 1em;
+}
