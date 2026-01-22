@@ -1,43 +1,27 @@
 class Account < ApplicationRecord
-  include Account::Storage, Entropic, MultiTenantable, Seedeable
+  include Entropic, Seedeable
 
   has_one :join_code
   has_many :users, dependent: :destroy
   has_many :boards, dependent: :destroy
-  has_many :cards, dependent: :destroy
-  has_many :webhooks, dependent: :destroy
-  has_many :tags, dependent: :destroy
-  has_many :columns, dependent: :destroy
-  has_many :exports, class_name: "Account::Export", dependent: :destroy
+  has_many :cards, through: :boards
 
-  before_create :assign_external_account_id
+  has_many_attached :uploads
+
   after_create :create_join_code
 
   validates :name, presence: true
 
   class << self
-    def create_with_owner(account:, owner:)
+    def create_with_admin_user(account:, owner:)
       create!(**account).tap do |account|
-        account.users.create!(role: :system, name: "System")
-        account.users.create!(**owner.with_defaults(role: :owner, verified_at: Time.current))
+        User.create!(account: account, role: :system, name: "System")
+        User.create!(**owner.reverse_merge(role: "admin", account: account))
       end
     end
   end
 
   def slug
-    "/#{AccountSlug.encode(external_account_id)}"
+    "/#{external_account_id}"
   end
-
-  def account
-    self
-  end
-
-  def system_user
-    users.find_by!(role: :system)
-  end
-
-  private
-    def assign_external_account_id
-      self.external_account_id ||= ExternalIdSequence.next
-    end
 end

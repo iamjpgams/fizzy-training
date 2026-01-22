@@ -1,6 +1,5 @@
 logo_jz:
   id: <%= ActiveRecord::FixtureSet.identify("logo_jz", :uuid) %>
-  account: 37s_uuid
   assigner: david_uuid
   assignee: jz_uuid
   card: logo_uuid
@@ -8,7 +7,6 @@ logo_jz:
 
 logo_kevin:
   id: <%= ActiveRecord::FixtureSet.identify("logo_kevin", :uuid) %>
-  account: 37s_uuid
   assigner: david_uuid
   assignee: kevin_uuid
   card: logo_uuid
@@ -16,7 +14,6 @@ logo_kevin:
 
 layout_jz:
   id: <%= ActiveRecord::FixtureSet.identify("layout_jz", :uuid) %>
-  account: 37s_uuid
   assigner: david_uuid
   assignee: jz_uuid
   card: layout_uuid

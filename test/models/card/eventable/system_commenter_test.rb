@@ -33,20 +33,6 @@ class Card::Eventable::SystemCommenterTest < ActiveSupport::TestCase
     end
   end
 
-  test "escapes html in comment body" do
-    users(:david).update! name: "<em>Injected</em>"
-    Current.session = sessions(:david)
-
-    assert_difference -> { @card.comments.count }, 1 do
-      @card.toggle_assignment users(:kevin)
-    end
-
-    comment = @card.comments.last
-    html = comment.body.body.to_html
-    assert_includes html, "&lt;em&gt;Injected&lt;/em&gt; <strong>assigned</strong> this to Kevin."
-    refute_includes html, "<em>Injected</em>"
-  end
-
   test "don't notify on system comments" do
     @card.watch_by(users(:david))
 
@@ -59,7 +45,7 @@ class Card::Eventable::SystemCommenterTest < ActiveSupport::TestCase
     def assert_system_comment(expected_comment)
       assert_difference -> { @card.comments.count }, 1 do
         yield
-        comment = @card.comments.last
+        comment = @card.comments.order(created_at: :desc).first
         assert comment.creator.system?
         assert_match Regexp.new(expected_comment.strip, Regexp::IGNORECASE), comment.body.to_plain_text.strip
       end

@@ -61,4 +61,20 @@ class IdentityTest < ActiveSupport::TestCase
     assert_not_predicate user, :active?
     assert_empty user.accesses, "user accesses should be removed"
   end
+
+  test "join creates membership and user for account" do
+    identity = identities(:david)
+    account = accounts(:initech)
+
+    assert_difference ["Membership.count", "User.count"], 1 do
+      identity.join(account)
+    end
+
+    membership = identity.memberships.order(created_at: :desc).first
+    assert_equal account.external_account_id.to_s, membership.tenant
+
+    user = account.users.order(created_at: :desc).first
+    assert_equal membership, user.membership
+    assert_equal identity.email_address, user.name
+  end
 end

@@ -1,5 +1,6 @@
+<% account = Account.find_by_external_account_id!(request.env["fizzy.external_account_id"]) rescue nil %>
 {
-  "name": <%= [ "Fizzy", Rails.env.production? ? nil : Rails.env ].compact.join(" - ").to_json.html_safe %>,
+  "name": <%= [ "Fizzy", account&.name, Rails.env.production? ? nil : Rails.env ].compact.join(" - ").to_json.html_safe %>,
   "icons": [
     {
       "src": "/app-icon-192.png",
@@ -18,9 +19,9 @@
       "purpose": "maskable"
     }
   ],
-  "start_url": "/",
+  "start_url": "<%= root_path %>",
   "display": "standalone",
-  "scope": "/",
+  "scope": "<%= root_path %>",
   "description": "Card-up the biggest issues in your projects",
   "categories": ["bugs", "business", "productivity"],
   "shortcuts": [
@@ -36,5 +37,7 @@
       "url": "<%= root_path %>",
       "icons": [{ "src": "<%= image_url("activity.svg") %>", "sizes": "any" }]
     }
-  ]
+  ],
+  "theme_color": "#ffffff",
+  "background_color": "#ffffff"
 }

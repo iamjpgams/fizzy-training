@@ -1,8 +1,8 @@
 class Filter < ApplicationRecord
   include Fields, Params, Resources, Summarized
 
+  belongs_to :account, default: -> { Current.account }
   belongs_to :creator, class_name: "User", default: -> { Current.user }
-  belongs_to :account, default: -> { creator.account }
 
   class << self
     def from_params(params)
@@ -18,7 +18,7 @@ class Filter < ApplicationRecord
 
   def cards
     @cards ||= begin
-      result = creator.accessible_cards.preloaded.published
+      result = creator.accessible_cards.published
       result = result.indexed_by(indexed_by)
       result = result.sorted_by(sorted_by)
       result = result.where(id: card_ids) if card_ids.present?
@@ -29,14 +29,14 @@ class Filter < ApplicationRecord
       result = result.where(creator_id: creators.ids) if creators.present?
       result = result.where(board: boards.ids) if boards.present?
       result = result.tagged_with(tags.ids) if tags.present?
-      result = result.where(cards: { created_at: creation_window }) if creation_window
+      result = result.where("cards.created_at": creation_window) if creation_window
       result = result.closed_at_window(closure_window) if closure_window
       result = result.closed_by(closers) if closers.present?
       result = terms.reduce(result) do |result, term|
         result.mentioning(term, user: creator)
       end
 
-      result.distinct
+      result
     end
   end
 
@@ -66,7 +66,7 @@ class Filter < ApplicationRecord
 
   private
     def include_closed_cards?
-      only_closed? || card_ids.present?
+      only_closed? || card_ids.present? || creator_ids.present?
     end
 
     def include_not_now_cards?

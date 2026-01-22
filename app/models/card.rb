@@ -1,10 +1,10 @@
 class Card < ApplicationRecord
-  include Assignable, Attachments, Broadcastable, Closeable, Colored, Entropic, Eventable,
-    Exportable, Golden, Mentions, Multistep, Pinnable, Postponable, Promptable,
-    Readable, Searchable, Stallable, Statuses, Storage::Tracked, Taggable, Triageable, Watchable
+  include Assignable, Attachments, Closeable, Colored, Entropic, Eventable,
+    Golden, Mentions, Multistep, Pinnable, Postponable, Promptable,
+    Readable, Searchable, Stallable, Statuses, Taggable, Triageable, Watchable
 
   belongs_to :account, default: -> { board.account }
-  belongs_to :board
+  belongs_to :board, touch: true
   belongs_to :creator, class_name: "User", default: -> { Current.user }
 
   has_many :comments, dependent: :destroy
@@ -13,23 +13,18 @@ class Card < ApplicationRecord
   has_rich_text :description
 
   before_save :set_default_title, if: :published?
-  before_create :assign_number
-
-  after_save   -> { board.touch }, if: :published?
-  after_touch  -> { board.touch }, if: :published?
   after_update :handle_board_change, if: :saved_change_to_board_id?
+  before_create :assign_number
 
   scope :reverse_chronologically, -> { order created_at:     :desc, id: :desc }
   scope :chronologically,         -> { order created_at:     :asc,  id: :asc  }
   scope :latest,                  -> { order last_active_at: :desc, id: :desc }
-  scope :with_users,              -> { preload(creator: [ :avatar_attachment, :account ], assignees: [ :avatar_attachment, :account ]) }
-  scope :preloaded,               -> { with_users.preload(:column, :tags, :steps, :closure, :goldness, :activity_spike, :image_attachment, board: [ :entropy, :columns ], not_now: [ :user ]).with_rich_text_description_and_embeds }
 
   scope :indexed_by, ->(index) do
     case index
     when "stalled" then stalled
     when "postponing_soon" then postponing_soon
-    when "closed" then closed
+    when "closed" then closed.recently_closed_first
     when "not_now" then postponed.latest
     when "golden" then golden
     when "draft" then drafted
@@ -48,16 +43,8 @@ class Card < ApplicationRecord
 
   delegate :accessible_to?, to: :board
 
-  def publicly_accessible?
-    published? && board.publicly_accessible?
-  end
-
   def card
     self
-  end
-
-  def to_param
-    number.to_s
   end
 
   def move_to(new_board)
@@ -72,61 +59,12 @@ class Card < ApplicationRecord
   end
 
   private
-    STORAGE_BATCH_SIZE = 1000
-
-    # Override to include comments, but only load comments that have attachments.
-    # Cards can have thousands of comments; most won't have attachments.
-    # Streams in batches to avoid loading all IDs into memory at once.
-    def storage_transfer_records
-      comment_ids_with_attachments = storage_comment_ids_with_attachments
-
-      if comment_ids_with_attachments.any?
-        [ self, *comments.where(id: comment_ids_with_attachments).to_a ]
-      else
-        [ self ]
-      end
-    end
-
-    def storage_comment_ids_with_attachments
-      direct = []
-      rich_text_map = {}
-
-      # Stream comment IDs in batches to avoid loading all into memory
-      comments.in_batches(of: STORAGE_BATCH_SIZE) do |batch|
-        batch_ids = batch.pluck(:id)
-
-        direct.concat \
-          ActiveStorage::Attachment
-            .where(record_type: "Comment", record_id: batch_ids)
-            .distinct
-            .pluck(:record_id)
-
-        ActionText::RichText
-          .where(record_type: "Comment", record_id: batch_ids)
-          .pluck(:id, :record_id)
-          .each { |rt_id, comment_id| rich_text_map[rt_id] = comment_id }
-      end
-
-      embed_comment_ids = if rich_text_map.any?
-        rich_text_map.keys.each_slice(STORAGE_BATCH_SIZE).flat_map do |batch_ids|
-          ActiveStorage::Attachment
-            .where(record_type: "ActionText::RichText", record_id: batch_ids)
-            .distinct
-            .pluck(:record_id)
-        end.filter_map { |rt_id| rich_text_map[rt_id] }
-      else
-        []
-      end
-
-      (direct + embed_comment_ids).uniq
-    end
-
     def set_default_title
       self.title = "Untitled" if title.blank?
     end
 
     def handle_board_change
-      old_board = account.boards.find_by(id: board_id_before_last_save)
+      old_board = Board.find_by(id: board_id_before_last_save)
 
       transaction do
         update! column: nil

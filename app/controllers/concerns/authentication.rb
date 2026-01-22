@@ -5,11 +5,10 @@ module Authentication
     before_action :require_account # Checking and setting account must happen first
     before_action :require_authentication
     helper_method :authenticated?
-    helper_method :email_address_pending_authentication
 
-    etag { Current.identity.id if authenticated? }
+    etag { Current.session.id if authenticated? }
 
-    include Authentication::ViaMagicLink, LoginHelper
+    include LoginHelper
   end
 
   class_methods do
@@ -19,9 +18,9 @@ module Authentication
     end
 
     def allow_unauthenticated_access(**options)
+      @unauthenticated_access_allowed = true
       skip_before_action :require_authentication, **options
       before_action :resume_session, **options
-      allow_unauthorized_access **options
     end
 
     def disallow_account_scope(**options)
@@ -32,17 +31,19 @@ module Authentication
 
   private
     def authenticated?
-      Current.identity.present?
+      Current.session.present?
     end
 
     def require_account
-      unless Current.account.present?
-        redirect_to main_app.session_menu_path(script_name: nil)
+      if request_account_id.blank?
+        redirect_to session_menu_url(script_name: nil)
+      else
+        set_current_account
       end
     end
 
     def require_authentication
-      resume_session || authenticate_by_bearer_token || request_authentication
+      resume_session || request_authentication
     end
 
     def resume_session
@@ -55,18 +56,8 @@ module Authentication
       Session.find_signed(cookies.signed[:session_token])
     end
 
-    def authenticate_by_bearer_token
-      if request.authorization.to_s.include?("Bearer")
-        authenticate_or_request_with_http_token do |token|
-          if identity = Identity.find_by_permissable_access_token(token, method: request.method)
-            Current.identity = identity
-          end
-        end
-      end
-    end
-
     def request_authentication
-      if Current.account.present?
+      if request_account_id.present?
         session[:return_to_after_authenticating] = request.url
       end
 
@@ -78,11 +69,11 @@ module Authentication
     end
 
     def redirect_authenticated_user
-      redirect_to main_app.root_url if authenticated?
+      redirect_to root_url if authenticated?
     end
 
     def redirect_tenanted_request
-      redirect_to main_app.root_url if Current.account.present?
+      redirect_to root_url if request_account_id
     end
 
     def start_new_session_for(identity)
@@ -92,6 +83,7 @@ module Authentication
     end
 
     def set_current_session(session)
+      logger.struct "  Authorized Identity##{session.identity.id}", authentication: { identity: { id: session.identity.id } }
       Current.session = session
       cookies.signed.permanent[:session_token] = { value: session.signed_id, httponly: true, same_site: :lax }
     end
@@ -101,7 +93,11 @@ module Authentication
       cookies.delete(:session_token)
     end
 
-    def session_token
-      cookies[:session_token]
+    def set_current_account
+      Current.account = Account.find_by(external_account_id: request_account_id)
+    end
+
+    def request_account_id
+      request.env["fizzy.external_account_id"]
     end
 end

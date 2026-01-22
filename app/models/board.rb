@@ -1,6 +1,7 @@
 class Board < ApplicationRecord
   include Accessible, AutoPostponing, Board::Storage, Broadcastable, Cards, Entropic, Filterable, Publishable, ::Storage::Tracked, Triageable
 
+  belongs_to :account, default: -> { Current.account }
   belongs_to :creator, class_name: "User", default: -> { Current.user }
   belongs_to :account, default: -> { creator.account }
 

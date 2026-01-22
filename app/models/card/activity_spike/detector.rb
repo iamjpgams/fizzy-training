@@ -21,13 +21,17 @@ class Card::ActivitySpike::Detector
 
     def register_activity_spike
       Card.suppressing_turbo_broadcasts do
-        Card::ActivitySpike.find_or_create_by!(card: card).touch
+        if card.activity_spike
+          card.activity_spike.touch
+        else
+          card.create_activity_spike!
+        end
       end
     end
 
     def multiple_people_commented?(minimum_comments: 3, minimum_participants: 2)
       card.comments
-        .where(created_at: recent_period.seconds.ago..)
+        .where("created_at >= ?", recent_period.seconds.ago)
         .group(:card_id)
         .having("COUNT(*) >= ?", minimum_comments)
         .having("COUNT(DISTINCT creator_id) >= ?", minimum_participants)
@@ -51,6 +55,6 @@ class Card::ActivitySpike::Detector
     end
 
     def last_event
-      card.events.order(:created_at).last
+      card.events.order(created_at: :desc).first
     end
 end

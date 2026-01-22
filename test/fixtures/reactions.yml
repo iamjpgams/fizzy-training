@@ -1,13 +1,11 @@
 kevin:
   id: <%= ActiveRecord::FixtureSet.identify("kevin_reaction", :uuid) %>
-  account: 37s_uuid
   content: "👍"
   comment: logo_agreement_jz_uuid
   reacter: kevin_uuid
 
 david:
   id: <%= ActiveRecord::FixtureSet.identify("david_reaction", :uuid) %>
-  account: 37s_uuid
   content: "👍"
   comment: logo_agreement_jz_uuid
   reacter: david_uuid

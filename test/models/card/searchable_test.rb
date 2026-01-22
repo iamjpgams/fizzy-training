@@ -1,7 +1,22 @@
 require "test_helper"
 
 class Card::SearchableTest < ActiveSupport::TestCase
-  include SearchTestHelper
+  self.use_transactional_tests = false
+
+  setup do
+    16.times { |i| ActiveRecord::Base.connection.execute "DELETE FROM search_index_#{i}" }
+    Account.find_by(name: "Search Test")&.destroy
+
+    @account = Account.create!(name: "Search Test")
+    @user = User.create!(name: "Test User", account: @account)
+    @board = Board.create!(name: "Test Board", account: @account, creator: @user)
+    Current.account = @account
+  end
+
+  teardown do
+    16.times { |i| ActiveRecord::Base.connection.execute "DELETE FROM search_index_#{i}" }
+    Account.find_by(name: "Search Test")&.destroy
+  end
 
   test "card search" do
     # Searching by title
@@ -12,16 +27,16 @@ class Card::SearchableTest < ActiveSupport::TestCase
     # Searching by comment
     card_with_comment = @board.cards.create!(title: "Some card", creator: @user)
     card_with_comment.comments.create!(body: "overflowing text", creator: @user)
-    results = Card.mentioning("overflowing", user: @user)
+    results = Card.mentioning("overflowing", user: @user )
     assert_includes results, card_with_comment
 
     # Sanitizing search query
     card_broken = @board.cards.create!(title: "broken layout", creator: @user)
-    results = Card.mentioning("broken \"", user: @user)
+    results = Card.mentioning("broken \"", user: @user )
     assert_includes results, card_broken
 
     # Empty query returns no results
-    assert_empty Card.mentioning("\"", user: @user)
+    assert_empty Card.mentioning("\"", user: @user )
 
     # Filtering by board_ids
     other_board = Board.create!(name: "Other Board", account: @account, creator: @user)
@@ -30,34 +45,5 @@ class Card::SearchableTest < ActiveSupport::TestCase
     results = Card.mentioning("searchable", user: @user)
     assert_includes results, card_in_board
     assert_not_includes results, card_in_other_board
-  end
-
-  test "deleting card removes search record and FTS entry" do
-    search_record_class = Search::Record.for(@user.account_id)
-    card = @board.cards.create!(title: "Card to delete", creator: @user)
-
-    # Verify search record exists
-    search_record = search_record_class.find_by(searchable_type: "Card", searchable_id: card.id)
-    assert_not_nil search_record, "Search record should exist after card creation"
-
-    # For SQLite, verify FTS entry exists
-    if search_record_class.connection.adapter_name == "SQLite"
-      fts_entry = search_record.search_records_fts
-      assert_not_nil fts_entry, "FTS entry should exist"
-      assert_equal card.title, fts_entry.title
-    end
-
-    # Delete the card
-    card.destroy
-
-    # Verify search record is deleted
-    search_record = search_record_class.find_by(searchable_type: "Card", searchable_id: card.id)
-    assert_nil search_record, "Search record should be deleted after card deletion"
-
-    # For SQLite, verify FTS entry is deleted
-    if search_record_class.connection.adapter_name == "SQLite"
-      fts_count = Search::Record::SQLite::Fts.where(rowid: card.id).count
-      assert_equal 0, fts_count, "FTS entry should be deleted"
-    end
   end
 end

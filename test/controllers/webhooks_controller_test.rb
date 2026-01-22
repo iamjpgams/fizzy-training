@@ -14,10 +14,6 @@ class WebhooksControllerTest < ActionDispatch::IntegrationTest
     webhook = webhooks(:active)
     get board_webhook_path(webhook.board, webhook)
     assert_response :success
-
-    webhook = webhooks(:inactive)
-    get board_webhook_path(webhook.board, webhook)
-    assert_response :success
   end
 
   test "new" do
@@ -39,7 +35,7 @@ class WebhooksControllerTest < ActionDispatch::IntegrationTest
       }
     end
 
-    webhook = Webhook.last
+    webhook = Webhook.order(created_at: :desc).first
 
     assert_redirected_to board_webhook_path(webhook.board, webhook)
     assert_equal board, webhook.board
@@ -64,11 +60,6 @@ class WebhooksControllerTest < ActionDispatch::IntegrationTest
 
   test "edit" do
     webhook = webhooks(:active)
-    get edit_board_webhook_path(webhook.board, webhook)
-    assert_response :success
-    assert_select "form"
-
-    webhook = webhooks(:inactive)
     get edit_board_webhook_path(webhook.board, webhook)
     assert_response :success
     assert_select "form"

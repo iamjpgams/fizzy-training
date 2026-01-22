@@ -21,15 +21,15 @@ class User::Filtering
   end
 
   def tags
-    @tags ||= account.tags.all.alphabetically
+    @tags ||= Tag.all.alphabetically
   end
 
   def users
-    @users ||= account.users.active.alphabetically
+    @users ||= Current.account.users.active.alphabetically
   end
 
   def filters
-    @filters ||= user.filters.all
+    @filters ||= Current.user.filters.all
   end
 
   def expanded?
@@ -77,9 +77,4 @@ class User::Filtering
   def cache_key
     ActiveSupport::Cache.expand_cache_key([ user, filter, expanded?, boards, tags, users, filters ], "user-filtering")
   end
-
-  private
-    def account
-      user.account
-    end
 end

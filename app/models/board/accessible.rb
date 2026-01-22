@@ -11,7 +11,7 @@ module Board::Accessible
       end
 
       def grant_to(users)
-        Access.insert_all Array(users).collect { |user| { id: ActiveRecord::Type::Uuid.generate, board_id: proxy_association.owner.id, user_id: user.id, account_id: proxy_association.owner.account.id } }
+        Access.insert_all Array(users).collect { |user| { id: ActiveRecord::Type::Uuid.generate, board_id: proxy_association.owner.id, user_id: user.id } }
       end
 
       def revoke_from(users)
@@ -49,7 +49,7 @@ module Board::Accessible
   end
 
   def watchers
-    users.active.where(accesses: { involvement: :watching })
+    users.without(User.system).where(accesses: { involvement: :watching })
   end
 
   private
@@ -66,7 +66,8 @@ module Board::Accessible
       #
       # 1. Mention->Card
       # 2. Mention->Comment->Card
-      board_id_binary = ActiveRecord::Type::Uuid.new.serialize(id)
+      uuid_type = ActiveRecord::Type.lookup(:uuid, adapter: :trilogy)
+      board_id_binary = uuid_type.serialize(id)
 
       user.mentions
         .joins("LEFT JOIN cards ON mentions.source_id = cards.id AND mentions.source_type = 'Card'")

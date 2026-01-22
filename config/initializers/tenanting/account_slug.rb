@@ -26,16 +26,7 @@ module AccountSlug
         env["fizzy.external_account_id"] = AccountSlug.decode($2)
       end
 
-      if env["fizzy.external_account_id"]
-        account = Account.find_by(external_account_id: env["fizzy.external_account_id"])
-        Current.with_account(account) do
-          @app.call env
-        end
-      else
-        Current.without_account do
-          @app.call env
-        end
-      end
+      @app.call env
     end
   end
 
@@ -43,4 +34,6 @@ module AccountSlug
   def self.encode(id) FORMAT % id end
 end
 
-Rails.application.config.middleware.insert_after Rack::TempfileReaper, AccountSlug::Extractor
+Rails.application.config.middleware.tap do |stack|
+  stack.insert_before Rails::Rack::Logger, AccountSlug::Extractor
+end

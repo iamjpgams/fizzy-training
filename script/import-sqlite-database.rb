@@ -4,8 +4,6 @@ require_relative "../config/environment"
 require "pathname"
 require "optparse"
 
-class AccountExistsError < StandardError; end
-
 class Import
   FIX_LINK_HOSTS = {
     "fizzy.37signals.com" => "app.fizzy.do",
@@ -13,13 +11,12 @@ class Import
     "app.box-car.com" => "app.fizzy.do"
   }.freeze
 
-  attr_reader :db_path, :untenanted_db_path, :skip_already_imported
+  attr_reader :db_path, :untenanted_db_path
   attr_reader :account, :tenant, :mapping
 
-  def initialize(db_path, untenanted_db_path, skip_already_imported: false)
+  def initialize(db_path, untenanted_db_path)
     @db_path = Pathname(db_path)
     @untenanted_db_path = Pathname(untenanted_db_path)
-    @skip_already_imported = skip_already_imported
     @mapping = nil
   end
 
@@ -34,27 +31,24 @@ class Import
 
         ActiveRecord::Base.no_touching do
           Current.with(account: account) do
-            begin
-              Webhook.skip_callback(:create, :after, :create_delinquency_tracker!)
-              Comment.skip_callback(:commit, :after, :watch_card_by_creator)
-              Comment.skip_callback(:commit, :after, :track_creation)
-              Mention.skip_callback(:commit, :after, :watch_source_by_mentionee)
-              Notification.skip_callback(:commit, :after, :broadcast_unread)
-              Notification.skip_callback(:create, :after, :bundle)
-              Reaction.skip_callback(:create, :after, :register_card_activity)
-              Card.skip_callback(:save, :before, :set_default_title)
-              Card.skip_callback(:update, :after, :handle_board_change)
-              ActiveStorage::Blob.skip_callback(:update, :after, :touch_attachments)
-              ActiveStorage::Blob.skip_callback(:commit, :after, :update_service_metadata)
-              ActiveStorage::Attachment.skip_callback(:commit, :after, :mirror_blob_later)
-              ActiveStorage::Attachment.skip_callback(:commit, :after, :analyze_blob_later)
-              ActiveStorage::Attachment.skip_callback(:commit, :after, :transform_variants_later)
-              ActiveStorage::Attachment.skip_callback(:commit, :after, :purge_dependent_blob_later)
-            rescue => e
-              puts "⚠️  Warning: Could not skip some callbacks: #{e.message}"
-            end
+            Webhook.skip_callback(:create, :after, :create_delinquency_tracker!)
+            Comment.skip_callback(:commit, :after, :watch_card_by_creator)
+            Comment.skip_callback(:commit, :after, :track_creation)
+            Mention.skip_callback(:commit, :after, :watch_source_by_mentionee)
+            Notification.skip_callback(:commit, :after, :broadcast_unread)
+            Notification.skip_callback(:create, :after, :bundle)
+            Reaction.skip_callback(:create, :after, :register_card_activity)
+            Card.skip_callback(:save, :before, :set_default_title)
+            Card.skip_callback(:update, :after, :handle_board_change)
+            ActiveStorage::Blob.skip_callback(:update, :after, :touch_attachments)
+            ActiveStorage::Blob.skip_callback(:commit, :after, :update_service_metadata)
+            ActiveStorage::Attachment.skip_callback(:commit, :after, :mirror_blob_later)
+            ActiveStorage::Attachment.skip_callback(:commit, :after, :analyze_blob_later)
+            ActiveStorage::Attachment.skip_callback(:commit, :after, :transform_variants_later)
+            ActiveStorage::Attachment.skip_callback(:commit, :after, :purge_dependent_blob_later)
 
             Event.suppress do
+              # copy_entropies
               copy_users
               copy_boards
               copy_accesses
@@ -75,28 +69,18 @@ class Import
               copy_webhooks
               copy_push_subscriptions
               copy_filters
-              copy_entropies
             end
 
             copy_notifications
             copy_notification_bundles
 
             fix_links
-
-            unless Rails.env.production?
-              # Don't spam real webhooks
-              Webhook.all.update_all(active: false)
-              # Don't send emails to real users
-              User::Settings.all.update_all(bundle_email_frequency: :never)
-            end
           end
         end
       end
     end
 
     puts "🎉 Import complete! (#{duration.round(2)}s)"
-  rescue AccountExistsError => e
-    raise e unless skip_already_imported
   end
 
   private
@@ -122,29 +106,29 @@ class Import
 
     def setup_account
       step("Setting up account", "Account set up in %{duration}") do
-        oldest_admin = import.users.order(id: :asc).admin.first
+        oldest_admin = import.users.order(id: :asc).where(role: :admin, active: true).first
         raise "No admin user found in the database" unless oldest_admin
 
         membership = untenanted.memberships.find(oldest_admin.membership_id)
         account = import.accounts.sole
 
         new_identity = Identity.find_or_create_by!(email_address: membership.identity.email_address)
+        new_membership = new_identity.memberships.find_or_create_by!(tenant: account.external_account_id.to_s)
 
         if Account.all.exists?(external_account_id: account.external_account_id)
-          raise AccountExistsError, "Account already exists"
+          raise "Account already exists"
         else
-          @account = Account.create_with_owner(
+          @account = Account.create_with_admin_user(
             account: {
-              external_account_id: account.external_account_id,
-              name: account.name.truncate(255, omission: "")
+              external_account_id: account.external_account_id.to_s,
+              name: account.name
             },
             owner: {
-              name: oldest_admin.name.truncate(255, omission: ""),
-              identity: new_identity
+              name: oldest_admin.name,
+              membership_id: new_membership.id
             }
           )
           @tenant = @account.external_account_id
-          @admin = @account.users.find_by(role: :owner)
         end
 
         old_join_code = import.account_join_codes.sole
@@ -163,32 +147,26 @@ class Import
       step("Copying users", "Copied %{count} users in %{duration}") do
         mapping[:users] ||= {}
         import.users.find_each do |old_user|
-          new_identity = nil
+          new_membership = nil
 
-          if old_user.membership_id && old_user.active?
+          if old_user.active && old_user.membership_id
             membership = untenanted.memberships.find(old_user.membership_id)
             new_identity = Identity.find_or_create_by!(email_address: membership.identity.email_address)
+            new_membership = new_identity.memberships.find_or_create_by!(tenant: tenant)
           end
 
-          new_user = if new_identity == @admin.identity
-            @admin
-          else
-            User.create!(
-              account: account,
-              identity: new_identity,
-              name: old_user.name.truncate(255, omission: ""),
-              role: old_user.role,
-              active: old_user.active,
-            )
+          new_user = User.find_or_create_by!(account_id: account.id, membership_id: new_membership&.id) do |u|
+            u.name = old_user.name
+            u.role = old_user.role
+            u.active = old_user.active
           end
 
           old_settings = old_user.settings
           if old_settings
-            User::Settings.create!(
-              user: new_user,
-              bundle_email_frequency: old_settings.bundle_email_frequency,
-              timezone_name: old_settings.timezone_name
-            )
+            User::Settings.find_or_create_by!(user_id: new_user.id) do |s|
+              s.bundle_email_frequency = old_settings.bundle_email_frequency
+              s.timezone_name = old_settings.timezone_name
+            end
           end
 
           mapping[:users][old_user.id] = new_user.id
@@ -205,7 +183,7 @@ class Import
           new_board = Board.create!(
             account_id: account.id,
             creator_id: mapping[:users][old_board.creator_id],
-            name: old_board.name.truncate(255, omission: ""),
+            name: old_board.name,
             all_access: old_board.all_access,
             created_at: old_board.created_at,
             updated_at: old_board.updated_at
@@ -236,7 +214,7 @@ class Import
           new_column = Column.create!(
             account_id: account.id,
             board_id: mapping[:boards][old_column.board_id],
-            name: old_column.name.truncate(255, omission: ""),
+            name: old_column.name,
             color: old_column.color,
             position: old_column.position,
             created_at: old_column.created_at,
@@ -291,7 +269,6 @@ class Import
             if old_activity_spike
               activity_spikes_to_insert << {
                 id: generate_uuid,
-                account_id: account.id,
                 card_id: new_id,
                 created_at: old_activity_spike.created_at,
                 updated_at: old_activity_spike.updated_at
@@ -302,7 +279,6 @@ class Import
             if old_engagement
               engagements_to_insert << {
                 id: generate_uuid,
-                account_id: account.id,
                 card_id: new_id,
                 status: old_engagement.status,
                 created_at: old_engagement.created_at,
@@ -314,7 +290,6 @@ class Import
             if old_goldness
               goldnesses_to_insert << {
                 id: generate_uuid,
-                account_id: account.id,
                 card_id: new_id,
                 created_at: old_goldness.created_at,
                 updated_at: old_goldness.updated_at
@@ -325,7 +300,6 @@ class Import
             if old_not_now
               not_nows_to_insert << {
                 id: generate_uuid,
-                account_id: account.id,
                 card_id: new_id,
                 user_id: old_not_now.user_id ? mapping[:users][old_not_now.user_id] : nil,
                 created_at: old_not_now.created_at,
@@ -336,7 +310,6 @@ class Import
             old_card.assignments.each do |old_assignment|
               assignments_to_insert << {
                 id: generate_uuid,
-                account_id: account.id,
                 card_id: new_id,
                 assignee_id: mapping[:users][old_assignment.assignee_id],
                 assigner_id: mapping[:users][old_assignment.assigner_id],
@@ -349,7 +322,6 @@ class Import
             if old_closure
               closures_to_insert << {
                 id: generate_uuid,
-                account_id: account.id,
                 card_id: new_id,
                 user_id: old_closure.user_id ? mapping[:users][old_closure.user_id] : nil,
                 created_at: old_closure.created_at,
@@ -469,7 +441,6 @@ class Import
 
             accesses_to_insert << {
               id: new_id,
-              account_id: account.id,
               board_id: mapping[:boards][old_access.board_id],
               user_id: mapping[:users][old_access.user_id],
               involvement: old_access.involvement,
@@ -557,11 +528,13 @@ class Import
           else next
           end
 
-          Entropy.find_or_create_by!(account_id: account.id, container_type: old_entropy.container_type, container_id: container_id) do |entropy|
-            entropy.auto_postpone_period = old_entropy.auto_postpone_period || 0
-            entropy.created_at = old_entropy.created_at
-            entropy.updated_at = old_entropy.updated_at
-          end
+          Entropy.create!(
+            container_type: old_entropy.container_type,
+            container_id: container_id,
+            auto_postpone_period: old_entropy.auto_postpone_period,
+            created_at: old_entropy.created_at,
+            updated_at: old_entropy.updated_at
+          )
         end
       end
     end
@@ -727,7 +700,6 @@ class Import
 
         ActiveStorage::VariantRecord.find_or_create_by!(
           id: new_variant_blob.id,
-          account_id: account.id,
           blob_id: new_blob.id,
           variation_digest: old_variant_record.variation_digest
         )
@@ -762,7 +734,8 @@ class Import
         mapping[:taggings] ||= {}
 
         import.tags.find_each do |old_tag|
-          new_tag = account.tags.find_or_create_by!(title: old_tag.title) do |t|
+          new_tag = Tag.find_or_create_by!(title: old_tag.title) do |t|
+            t.account_id = account.id
             t.created_at = old_tag.created_at
             t.updated_at = old_tag.updated_at
           end
@@ -798,7 +771,6 @@ class Import
 
             watches_to_insert << {
               id: new_id,
-              account_id: account.id,
               user_id: mapping[:users][old_watch.user_id],
               card_id: mapping[:cards][old_watch.card_id],
               watching: old_watch.watching,
@@ -827,7 +799,6 @@ class Import
 
             pins_to_insert << {
               id: new_id,
-              account_id: account.id,
               user_id: mapping[:users][old_pin.user_id],
               card_id: mapping[:cards][old_pin.card_id],
               created_at: old_pin.created_at,
@@ -854,7 +825,7 @@ class Import
           new_webhook = Webhook.create!(
             account_id: account.id,
             board_id: mapping[:boards][old_webhook.board_id],
-            name: old_webhook.name.truncate(255, omission: ""),
+            name: old_webhook.name,
             url: old_webhook.url,
             signing_secret: old_webhook.signing_secret,
             subscribed_actions: subscribed_actions,
@@ -1305,20 +1276,10 @@ class Models
   end
 end
 
-options = {
-  skip_already_imported: false
-}
+options = {}
 
 parser = OptionParser.new do |parser|
-  parser.banner = "Usage: #{$PROGRAM_NAME} [options] <tenanted_db_path>..."
-
-  parser.on("--untenanted-db-path PATH", "Path to the untenanted database") do |path|
-    options[:untenanted_db_path] = path
-  end
-
-  parser.on("--skip-already-imported", "Skip import if account already exists") do
-    options[:skip_already_imported] = true
-  end
+  parser.banner = "Usage: #{$PROGRAM_NAME} <db_path> <untenanted_db_path>"
 
   parser.on("-h", "--help", "Show this help message") do
     puts parser
@@ -1328,40 +1289,20 @@ end
 
 parser.parse!
 
-untenanted_db_path = options[:untenanted_db_path]
-tenanted_db_paths = ARGV
+db_path = ARGV[0]
+untenanted_db_path = ARGV[1]
 
-if untenanted_db_path.nil?
-  $stderr.puts "Error: --untenanted-db-path is required"
+if db_path.nil? || untenanted_db_path.nil?
+  $stderr.puts "Error: both db_path and untenanted_db_path are required"
   $stderr.puts
   $stderr.puts parser
   exit 1
 end
 
-if tenanted_db_paths.empty?
-  $stderr.puts "Error: at least one tenanted database path is required"
-  $stderr.puts
-  $stderr.puts parser
+begin
+  Import.new(db_path, untenanted_db_path).import_database
+rescue => e
+  $stderr.puts "Error: #{e.message}"
+  $stderr.puts e.backtrace.join("\n") if ENV["DEBUG"]
   exit 1
 end
-
-total_imported = 0
-
-duration = ActiveSupport::Benchmark.realtime do
-  tenanted_db_paths.each_with_index do |db_path, index|
-    puts
-    puts "="*80
-    puts "Processing database #{index + 1}/#{tenanted_db_paths.size}: #{db_path}"
-    puts "="*80
-
-    Import.new(db_path, untenanted_db_path, skip_already_imported: options[:skip_already_imported]).import_database
-    total_imported += 1
-  end
-end
-
-puts
-puts "="*80
-puts "Summary:"
-puts "  Imported: #{total_imported}"
-puts "  Total time: #{duration.round(2)} seconds"
-puts "="*80

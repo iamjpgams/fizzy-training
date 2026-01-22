@@ -22,16 +22,11 @@ module Authorization
     end
 
     def ensure_staff
-      head :forbidden unless Current.identity.staff?
+      head :forbidden unless Current.user.staff?
     end
 
     def ensure_can_access_account
-      if Current.user.blank? || !Current.user.active?
-        respond_to do |format|
-          format.html { redirect_to session_menu_path(script_name: nil) }
-          format.json { head :forbidden }
-        end
-      end
+      redirect_to session_menu_url(script_name: nil) if Current.membership.blank?
     end
 
     def redirect_existing_user

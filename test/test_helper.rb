@@ -13,7 +13,7 @@ VCR.configure do |config|
   config.allow_http_connections_when_no_cassette = true
   config.cassette_library_dir = "test/vcr_cassettes"
   config.hook_into :webmock
-  config.filter_sensitive_data("<OPEN_AI_KEY>") { Rails.application.credentials.openai_api_key || ENV["OPEN_AI_API_KEY"] }
+  config.filter_sensitive_data("<OPEN_API_KEY>") { Rails.application.credentials.openai_api_key || ENV["OPEN_AI_API_KEY"] }
   config.default_cassette_options = {
     match_requests_on: [ :method, :uri, :body ]
   }
@@ -38,16 +38,17 @@ end
 
 module ActiveSupport
   class TestCase
-    parallelize workers: :number_of_processors, work_stealing: ENV["WORK_STEALING"] != "false"
+    parallelize(workers: :number_of_processors)
 
     # Setup all fixtures in test/fixtures/*.yml for all tests in alphabetical order.
     fixtures :all
 
     include ActiveJob::TestHelper
-    include ActionTextTestHelper, CachingTestHelper, CardTestHelper, ChangeTestHelper, SessionTestHelper
-    include Turbo::Broadcastable::TestHelper
+    include ActionTextTestHelper, CardTestHelper, ChangeTestHelper, SessionTestHelper
 
     setup do
+      # TODO:PLANB: this is hacky, we should sort through the `Current` dependencies and figure out
+      #             how to set Current.user without needing both a session *and* an account
       Current.account = accounts("37s")
     end
 
@@ -61,17 +62,6 @@ class ActionDispatch::IntegrationTest
   setup do
     integration_session.default_url_options[:script_name] = "/#{ActiveRecord::FixtureSet.identify("37signals")}"
   end
-
-  private
-    def without_action_dispatch_exception_handling
-      original = Rails.application.config.action_dispatch.show_exceptions
-      Rails.application.config.action_dispatch.show_exceptions = :none
-      Rails.application.instance_variable_set(:@app_env_config, nil) # Clear memoized env_config
-      yield
-    ensure
-      Rails.application.config.action_dispatch.show_exceptions = original
-      Rails.application.instance_variable_set(:@app_env_config, nil) # Reset env_config
-    end
 end
 
 class ActionDispatch::SystemTestCase
@@ -91,7 +81,7 @@ module FixturesTestHelper
       end
 
       # Rails passes :string for varchar columns, so handle both :uuid and :string
-      return super(label, column_type) unless column_type.in?([ :uuid, :string ])
+      return super(label, column_type) unless column_type.in?([:uuid, :string])
       generate_fixture_uuid(label)
     end
 
@@ -104,20 +94,19 @@ module FixturesTestHelper
       # so that UUIDs sort in the same order as integer IDs
       fixture_int = Zlib.crc32("fixtures/#{label}") % (2**30 - 1)
 
-      # Translate the deterministic order into times in the past, so that records
-      # created during test runs are also always newer than the fixtures.
+      # Use fixture_int as second offset from a fixed base time (1 year before 2025-01-01)
+      # This ensures all fixtures are in the past, and new test records are newest
       base_time = Time.utc(2024, 1, 1, 0, 0, 0)
-      timestamp = base_time + (fixture_int / 1000.0)
+      timestamp = base_time + fixture_int.seconds
 
       uuid_v7_with_timestamp(timestamp, label)
     end
 
     def uuid_v7_with_timestamp(time, seed_string)
       # Generate UUIDv7 with custom timestamp and deterministic random bits
-      # Format: 48-bit timestamp_ms | 12-bit sub_ms_precision | 4-bit version | 62-bit random
+      # Format: 48-bit timestamp_ms | 12-bit random | 4-bit version | 62-bit random
 
-      time_ms = time.to_f * 1000
-      timestamp_ms = time_ms.to_i
+      timestamp_ms = (time.to_f * 1000).to_i
 
       # 48-bit timestamp (milliseconds since epoch)
       bytes = []
@@ -128,18 +117,13 @@ module FixturesTestHelper
       bytes[4] = (timestamp_ms >> 8) & 0xff
       bytes[5] = timestamp_ms & 0xff
 
-      # Use the 12-bit rand_a field for sub-millisecond precision
-      # Extract fractional milliseconds and convert to 12-bit value (0-4095)
-      # This gives us ~0.244 microsecond precision
-      frac_ms = time_ms - timestamp_ms
-      sub_ms_precision = (frac_ms * 4096).to_i & 0xfff
-
-      # Derive deterministic "random" bits from seed_string for the remaining random bits
+      # Derive deterministic "random" bits from seed_string
       hash = Digest::MD5.hexdigest(seed_string)
 
-      # 12-bit sub-ms precision + 4-bit version (0111 for v7)
-      bytes[6] = ((sub_ms_precision >> 8) & 0x0f) | 0x70  # version 7
-      bytes[7] = sub_ms_precision & 0xff
+      # 12-bit random + 4-bit version (0111 for v7)
+      rand_a = hash[0...3].to_i(16) & 0xfff
+      bytes[6] = ((rand_a >> 8) & 0x0f) | 0x70  # version 7
+      bytes[7] = rand_a & 0xff
 
       # 2-bit variant (10) + 62-bit random
       rand_b = hash[3...19].to_i(16) & ((2**62) - 1)
@@ -154,11 +138,16 @@ module FixturesTestHelper
 
       # Format as UUID string and convert to base36 (25 chars)
       uuid = "%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x" % bytes
-      ActiveRecord::Type::Uuid.hex_to_base36(uuid.delete("-"))
+      hex = uuid.delete("-")
+      hex.to_i(16).to_s(36).rjust(25, "0")
     end
   end
 end
 
 ActiveSupport.on_load(:active_record_fixture_set) do
   prepend(FixturesTestHelper)
+end
+
+unless Rails.application.config.x.oss_config
+  load File.expand_path("../gems/fizzy-saas/test/test_helper.rb", __dir__)
 end

@@ -1,5 +1,3 @@
-require_relative "extensions"
-
 class DatabaseRoleLogger
   def initialize(app)
     @app = app
@@ -12,6 +10,4 @@ class DatabaseRoleLogger
   end
 end
 
-if ActiveRecord::Base.replica_configured?
-  Rails.application.config.middleware.insert_after ActiveRecord::Middleware::DatabaseSelector, DatabaseRoleLogger
-end
+Rails.application.config.middleware.insert_after ActiveRecord::Middleware::DatabaseSelector, DatabaseRoleLogger

@@ -1,12 +1,8 @@
 class BoardsController < ApplicationController
   include FilterScoped
 
-  before_action :set_board, except: %i[ index new create ]
-  before_action :ensure_permission_to_admin_board, only: %i[ update destroy ]
-
-  def index
-    set_page_and_extract_portion_from Current.user.boards
-  end
+  before_action :set_board, except: %i[ new create ]
+  before_action :ensure_permission_to_change_accesses, only: %i[ update ]
 
   def show
     if @filter.used?(ignore_boards: true)
@@ -22,42 +18,29 @@ class BoardsController < ApplicationController
 
   def create
     @board = Board.create! board_params.with_defaults(all_access: true)
-
-    respond_to do |format|
-      format.html { redirect_to board_path(@board) }
-      format.json { head :created, location: board_path(@board, format: :json) }
-    end
+    redirect_to board_path(@board)
   end
 
   def edit
-    selected_user_ids = @board.users.ids
+    selected_user_ids = @board.users.pluck :id
     @selected_users, @unselected_users = \
-      @board.account.users.active.alphabetically.includes(:identity).partition { |user| selected_user_ids.include? user.id }
+      @board.account.users.active.alphabetically.partition { |user| selected_user_ids.include? user.id }
   end
 
   def update
     @board.update! board_params
     @board.accesses.revise granted: grantees, revoked: revokees if grantees_changed?
 
-    respond_to do |format|
-      format.html do
-        if @board.accessible_to?(Current.user)
-          redirect_to edit_board_path(@board), notice: "Saved"
-        else
-          redirect_to root_path, notice: "Saved (you were removed from the board)"
-        end
-      end
-      format.json { head :no_content }
+    if @board.accessible_to?(Current.user)
+      redirect_to edit_board_path(@board), notice: "Saved"
+    else
+      redirect_to root_path, notice: "Saved (you were removed from the board)"
     end
   end
 
   def destroy
     @board.destroy
-
-    respond_to do |format|
-      format.html { redirect_to root_path }
-      format.json { head :no_content }
-    end
+    redirect_to root_path
   end
 
   private
@@ -65,10 +48,18 @@ class BoardsController < ApplicationController
       @board = Current.user.boards.find params[:id]
     end
 
-    def ensure_permission_to_admin_board
-      unless Current.user.can_administer_board?(@board)
+    def ensure_permission_to_change_accesses
+      if trying_to_change_accesses? && !Current.user.can_administer_board?(@board)
         head :forbidden
       end
+    end
+
+    def trying_to_change_accesses?
+      all_access_changed? || grantees_changed?
+    end
+
+    def all_access_changed?
+      params[:board]&.key?(:all_access)
     end
 
     def grantees_changed?
@@ -81,9 +72,8 @@ class BoardsController < ApplicationController
     end
 
     def show_columns
-      cards = @board.cards.awaiting_triage.latest.with_golden_first.preloaded
-      set_page_and_extract_portion_from cards
-      fresh_when etag: [ @board, @page.records, @user_filtering, Current.account ]
+      set_page_and_extract_portion_from @board.cards.awaiting_triage.latest.with_golden_first
+      fresh_when etag: [ @board, @page.records, @user_filtering ]
     end
 
     def board_params

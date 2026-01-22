@@ -9,9 +9,8 @@ module ApplicationCable
     private
       def set_current_user
         if session = find_session_by_cookie
-          account = Account.find_by(external_account_id: request.env["fizzy.external_account_id"])
-          Current.account = account
-          self.current_user = session.identity.users.find_by!(account: account) if account
+          membership = session.identity.memberships.find_by!(tenant: request.env["fizzy.external_account_id"])
+          self.current_user = membership.user if membership.user.active?
         end
       end
 

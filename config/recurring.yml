@@ -1,5 +1,3 @@
-<% require_relative "../lib/fizzy" %>
-
 production: &production
   # Application functionality: notifications and summaries
   deliver_bundled_notifications:
@@ -8,7 +6,7 @@ production: &production
 
   # Application cleanup
   auto_postpone_all_due:
-    command: "Card.auto_postpone_all_due"
+    class: Card::AutoPostponeAllDueJob
     schedule: every hour at minute 50
   delete_unused_tags:
     class: DeleteUnusedTagsJob
@@ -18,28 +16,20 @@ production: &production
   clear_solid_queue_finished_jobs:
     command: "SolidQueue::Job.clear_finished_in_batches(sleep_between_batches: 0.3)"
     schedule: every hour at minute 12
+  clear_solid_queue_recurring_executions:
+    command: "SolidQueue::RecurringExecution.clear_in_batches"
+    schedule: every hour at minute 52
   cleanup_webhook_deliveries:
-    command: "Webhook::Delivery.cleanup"
+    class: Webhook::CleanupDeliveriesJob
     schedule: every 4 hours at minute 51
   cleanup_magic_links:
     command: "MagicLink.cleanup"
     schedule: every 4 hours
-  cleanup_exports:
-    command: "Account::Export.cleanup"
-    schedule: every hour at minute 20
 
-<% if Fizzy.saas? %>
   # Metrics
   yabeda_actioncable:
     command: "Yabeda::ActionCable.measure"
     schedule: every 60 seconds
-<% end %>
 
-beta:
-  # Only Solid Queue maintenance
-  clear_solid_queue_finished_jobs:
-    command: "SolidQueue::Job.clear_finished_in_batches(sleep_between_batches: 0.3)"
-    schedule: every hour at minute 12
-
+beta: *production
 staging: *production
-development: *production

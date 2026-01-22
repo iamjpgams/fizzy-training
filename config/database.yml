@@ -1,9 +1,59 @@
-<%
-  config_path = if Fizzy.saas?
-    gem_path = Rails.root.join("saas").to_s
-    File.join(gem_path, "config", "database.yml")
-  else
-    File.join("config", "database.#{Fizzy.db_adapter}.yml")
-  end
-%>
-<%= ERB.new(File.read(config_path)).result %>
+default: &default
+  adapter: trilogy
+  host: <%= ENV.fetch "DB_HOST", "127.0.0.1" %>
+  port: <%= ENV.fetch "DB_PORT", 33380 %>
+  pool: 50
+  timeout: 5000
+
+development:
+  primary:
+    <<: *default
+    database: fizzy_development
+  replica:
+    <<: *default
+    database: fizzy_development
+    replica: true
+  cable:
+    <<: *default
+    database: development_cable
+    migrations_paths: db/cable_migrate
+  cache:
+    <<: *default
+    database: development_cache
+    migrations_paths: db/cache_migrate
+  queue:
+    <<: *default
+    database: development_queue
+    migrations_paths: db/queue_migrate
+
+# Warning: The database defined as "test" will be erased and
+# re-generated from your development database when you run "rake".
+# Do not set this db to the same as development or production.
+test:
+  primary:
+    <<: *default
+    database: fizzy_test
+  replica:
+    <<: *default
+    database: fizzy_test
+    replica: true
+
+production: &production
+  primary:
+    <<: *default
+    database: fizzy_<%= Rails.env %>
+  cable:
+    <<: *default
+    database: <%= Rails.env %>_cable
+    migrations_paths: db/cable_migrate
+  cache:
+    <<: *default
+    database: <%= Rails.env %>_cache
+    migrations_paths: db/cache_migrate
+  queue:
+    <<: *default
+    database: <%= Rails.env %>_queue
+    migrations_paths: db/queue_migrate
+
+beta: *production
+staging: *production

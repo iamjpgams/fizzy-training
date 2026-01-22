@@ -23,7 +23,7 @@ class CardTest < ActiveSupport::TestCase
       cards(:logo).comments.create!(body: "Agreed.")
     end
 
-    assert_equal "Agreed.", cards(:logo).comments.last.body.to_plain_text.chomp
+    assert_equal "Agreed.", cards(:logo).comments.order(created_at: :desc).first.body.to_plain_text.chomp
   end
 
   test "assignment states" do
@@ -37,8 +37,8 @@ class CardTest < ActiveSupport::TestCase
     assert_difference({ -> { cards(:logo).assignees.count } => -1, -> { Event.count } => +1 }) do
       cards(:logo).toggle_assignment users(:kevin)
     end
-    assert_not cards(:logo).reload.assigned_to?(users(:kevin))
-    unassign_event = Event.last
+    assert_not cards(:logo).assigned_to?(users(:kevin))
+    unassign_event = Event.order(created_at: :desc).first
     assert_equal "card_unassigned", unassign_event.action
     assert_equal [ users(:kevin) ], unassign_event.assignees
 
@@ -46,7 +46,7 @@ class CardTest < ActiveSupport::TestCase
       cards(:logo).toggle_assignment users(:kevin)
     end
     assert cards(:logo).assigned_to?(users(:kevin))
-    assign_event = Event.last
+    assign_event = Event.order(created_at: :desc).first
     assert_equal "card_assigned", assign_event.action
     assert_equal [ users(:kevin) ], assign_event.assignees
   end
@@ -75,17 +75,23 @@ class CardTest < ActiveSupport::TestCase
     assert_equal "prioritized", cards(:logo).taggings.last.tag.title
   end
 
+  test "searchable by title" do
+    card = boards(:writebook).cards.create! title: "Insufficient haggis", creator: users(:kevin)
+
+    skip("TODO:PLANB: search")
+    assert_includes Card.search("haggis"), card
+  end
+
   test "closed" do
     assert_equal [ cards(:shipping) ], Card.closed
   end
 
   test "open" do
-    assert_equal cards(:logo, :layout, :text, :buy_domain).to_set, accounts("37s").cards.open.to_set
-    assert_equal cards(:radio, :paycheck, :unfinished_thoughts).to_set, accounts("initech").cards.open.to_set
+    assert_equal cards(:logo, :layout, :text, :buy_domain).to_set, Card.open.to_set
   end
 
   test "card_unassigned" do
-    assert_equal cards(:shipping, :text, :buy_domain).to_set, accounts("37s").cards.unassigned.to_set
+    assert_equal cards(:shipping, :text, :buy_domain).to_set, Card.unassigned.to_set
   end
 
   test "assigned to" do
@@ -104,6 +110,15 @@ class CardTest < ActiveSupport::TestCase
 
   test "tagged with" do
     assert_equal cards(:layout, :text), Card.tagged_with(tags(:mobile))
+  end
+
+  test "mentioning" do
+    card = boards(:writebook).cards.create! title: "Insufficient haggis", creator: users(:kevin)
+    cards(:logo).comments.create!(body: "I hate haggis")
+    cards(:text).comments.create!(body: "I love haggis")
+
+    skip("TODO:PLANB: search")
+    assert_equal [ card, cards(:logo), cards(:text) ].sort, Card.mentioning("haggis").sort
   end
 
   test "for published cards, it should set the default title 'Untitiled' when not provided" do

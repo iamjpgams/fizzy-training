@@ -1,13 +1,24 @@
 class Sessions::MenusController < ApplicationController
   disallow_account_scope
 
+  before_action(if: :render_as_menu_section?) { request.variant = :menu_section }
+
   layout "public"
 
   def show
-    @accounts = Current.identity.accounts
+    @memberships = Current.identity.memberships
 
-    if @accounts.one?
-      redirect_to root_url(script_name: @accounts.first.slug)
+    if params[:without]
+      @memberships = @memberships.where.not(tenant: params[:without])
+    end
+
+    if @memberships.one? && !render_as_menu_section?
+      redirect_to root_url(script_name: "/#{@memberships.first.tenant}")
     end
   end
+
+  private
+    def render_as_menu_section?
+      params[:menu_section]
+    end
 end

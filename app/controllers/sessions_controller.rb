@@ -1,7 +1,12 @@
 class SessionsController < ApplicationController
+  # FIXME: Remove this before launch!
+  SIGNUP_USERNAME = Rails.env.local? ? "testname" : Rails.application.credentials.account_signup_http_basic_auth.name
+  SIGNUP_PASSWORD = Rails.env.local? ? "testpassword" : Rails.application.credentials.account_signup_http_basic_auth.password
+  http_basic_authenticate_with name: SIGNUP_USERNAME, password: SIGNUP_PASSWORD, realm: "Fizzy Signup", only: :create, unless: -> { Identity.exists?(email_address: email_address) }
+
   disallow_account_scope
   require_unauthenticated_access except: :destroy
-  rate_limit to: 10, within: 3.minutes, only: :create, with: :rate_limit_exceeded
+  rate_limit to: 10, within: 3.minutes, only: :create, with: -> { redirect_to new_session_path, alert: "Try again later." }
 
   layout "public"
 
@@ -9,12 +14,14 @@ class SessionsController < ApplicationController
   end
 
   def create
-    if identity = Identity.find_by(email_address: email_address)
-      sign_in identity
-    elsif Account.accepting_signups?
-      sign_up
-    else
-      redirect_to_fake_session_magic_link email_address
+    if identity = Identity.find_by_email_address(email_address)
+      magic_link = identity.send_magic_link
+      flash[:magic_link_code] = magic_link&.code if Rails.env.development?
+      redirect_to session_magic_link_path
+    elsif signups_allowed?
+      Signup.new(email_address: email_address).create_identity
+      session[:return_to_after_authenticating] = saas.new_signup_membership_path
+      redirect_to session_magic_link_path
     end
   end
 
@@ -24,43 +31,7 @@ class SessionsController < ApplicationController
   end
 
   private
-    def magic_link_from_sign_in_or_sign_up
-      if identity = Identity.find_by_email_address(email_address)
-        identity.send_magic_link
-      else
-        signup = Signup.new(email_address: email_address)
-        signup.create_identity if signup.valid?(:identity_creation) && Account.accepting_signups?
-      end
-    end
-
     def email_address
       params.expect(:email_address)
-    end
-
-    def rate_limit_exceeded
-      rate_limit_exceeded_message = "Try again later."
-
-      respond_to do |format|
-        format.html { redirect_to new_session_path, alert: rate_limit_exceeded_message }
-        format.json { render json: { message: rate_limit_exceeded_message }, status: :too_many_requests }
-      end
-    end
-
-    def sign_in(identity)
-      redirect_to_session_magic_link identity.send_magic_link
-    end
-
-    def sign_up
-      signup = Signup.new(email_address: email_address)
-
-      if signup.valid?(:identity_creation)
-        magic_link = signup.create_identity
-        redirect_to_session_magic_link magic_link
-      else
-        respond_to do |format|
-          format.html { redirect_to new_session_path, alert: "Something went wrong" }
-          format.json { render json: { message: "Something went wrong" }, status: :unprocessable_entity }
-        end
-      end
     end
 end

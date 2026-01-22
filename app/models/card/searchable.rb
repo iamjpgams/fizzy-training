@@ -5,24 +5,37 @@ module Card::Searchable
     include ::Searchable
 
     scope :mentioning, ->(query, user:) do
-      search_record_class = Search::Record.for(user.account_id)
-      joins(search_record_class.card_join).merge(search_record_class.for_query(query, user: user))
+      query = Search::Query.wrap(query)
+
+      if query.valid?
+        index_scope = Search::Index
+          .for_account(user.account_id)
+          .in_boards(user.board_ids)
+          .matching(query.to_s)
+          .select(:card_id)
+
+        where(id: index_scope)
+          .distinct
+      else
+        none
+      end
     end
   end
 
-  def search_title
-    title
-  end
+  private
+    def search_title
+      Search::Stemmer.stem title
+    end
 
-  def search_content
-    description.to_plain_text
-  end
+    def search_content
+      Search::Stemmer.stem description.to_plain_text
+    end
 
-  def search_card_id
-    id
-  end
+    def search_card_id
+      id
+    end
 
-  def search_board_id
-    board_id
-  end
+    def search_board_id
+      board_id
+    end
 end
