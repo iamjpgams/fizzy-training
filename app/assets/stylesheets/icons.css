@@ -45,6 +45,7 @@
   .icon--collapse { --svg: url("collapse.svg "); }
   .icon--board { --svg: url("board.svg "); }
   .icon--board-add { --svg: url("board-add.svg "); }
+  .icon--collapse { --svg: url("collapse.svg "); }
   .icon--column-left { --svg: url("column-left.svg "); }
   .icon--column-right { --svg: url("column-right.svg "); }
   .icon--comment { --svg: url("comment.svg "); }

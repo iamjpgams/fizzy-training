@@ -3,10 +3,6 @@
   /* ------------------------------------------------------------------------ */
 
   #main:has(.card-columns) {
-    --main-padding: 0;
-  }
-
-  .card-columns {
     --bubble-size: 3.5rem;
     --cards-gap: min(1.2cqi, 1.7rem);
     --column-gap: 8px;
@@ -15,9 +11,13 @@
     --column-width-collapsed: 40px;
     --column-width-expanded: 450px;
     --progress-increment: var(--progress-max-height) / var(--progress-max-cards);
-    --progress-max-cards: 15; /* should match first geared pagination page size */
+    --progress-max-cards: 20;
     --progress-max-height: 50dvh;
 
+    padding-inline: var(--column-gap);
+  }
+
+  .card-columns {
     container-type: inline-size;
     display: grid;
     gap: var(--column-gap);
@@ -26,7 +26,6 @@
     max-inline-size: var(--main-width);
     overflow-x: auto;
     overflow-y: hidden;
-    padding-block-end: var(--column-width-collapsed);
     position: relative;
 
     /* When it has something expanded */
@@ -35,14 +34,11 @@
     }
 
     &:has(.cards) {
-      block-size: 100%;
       min-block-size: 20lh;
     }
 
-    body:not(.public) & {
-      @media (max-width: 519px) {
-        display: none;
-      }
+    @media (max-width: 639px) {
+      --bubble-size: 3rem;
     }
   }
 
@@ -55,12 +51,10 @@
 
   .card-columns__left {
     justify-content: end;
-    padding-inline-start: var(--column-gap);
   }
 
   .card-columns__right {
     justify-content: start;
-    padding-inline-end: var(--column-gap);
   }
 
   /* Column
@@ -70,7 +64,6 @@
     --column-color: color-mix(in srgb, var(--card-color) 15%, var(--color-canvas));
 
     inline-size: var(--column-width-expanded);
-    outline: none;
     position: relative;
     scroll-snap-align: start;
 
@@ -114,6 +107,7 @@
         }
       }
     }
+
 
     @media (any-hover: hover) {
       .card:has(.card__background img:not([src=""])):hover .card__background img:not([src=""]) {
@@ -175,21 +169,6 @@
     .cards--grid & {
       display: contents;
     }
-
-    [aria-selected] & .card[aria-selected] {
-      outline: var(--focus-ring-size) solid var(--color-selected-dark);
-      outline-offset: var(--focus-ring-offset);
-
-      html[data-theme="dark"] & {
-        outline-color: oklch(var(--lch-blue-medium));
-      }
-
-      @media (prefers-color-scheme: dark) {
-        html:not([data-theme]) & {
-          outline-color: oklch(var(--lch-blue-medium));
-        }
-      }
-    }
   }
 
   .cards__new-column {
@@ -248,7 +227,7 @@
     .cards:not(.is-collapsed) & {
       display: grid;
       grid-template-areas: "menu expander maximize";
-      grid-template-columns: var(--column-width-collapsed) 1fr var(--column-width-collapsed);
+      grid-template-columns: auto 1fr auto;
       margin-block-end: calc(0.5 * var(--cards-gap));
     }
   }
@@ -281,8 +260,6 @@
   }
 
   .cards__expander {
-    --gradient-direction: to bottom;
-
     align-items: center;
     border-radius: 99rem;
     cursor: pointer;
@@ -304,7 +281,7 @@
 
     /* Progress */
     &:after {
-      background: linear-gradient(var(--gradient-direction), var(--card-color), var(--column-color) 80%);
+      background: linear-gradient(to bottom, var(--card-color), var(--column-color) 80%);
       block-size: var(--column-width-collapsed);
       border-radius: 99rem;
       content: "";
@@ -345,7 +322,6 @@
 
       &:after {
         block-size: calc(var(--column-width-collapsed) + var(--card-count) * var(--progress-increment));
-        max-block-size: none;
         opacity: 1;
         inline-size: var(--column-width-collapsed);
       }
@@ -403,9 +379,35 @@
         display: none;
       }
 
-      .cards:not(.is-collapsed) .cards__expander:hover & {
-        opacity: 0.66;
-        scale: 1;
+      .cards:not(.is-collapsed) & {
+        .cards__expander:hover & {
+          opacity: 0.66;
+          scale: 1;
+        }
+      }
+    }
+  }
+
+  .blank-slate--card {
+    box-shadow: none !important;
+    color: color-mix(in srgb, var(--card-color) 70%, var(--color-canvas));
+
+    p {
+      font-size: var(--text-small);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+
+      &.blank-slate-for-grid {
+        display: none;
+
+        .cards--grid & {
+          display: initial;
+        }
+      }
+
+      .cards--grid &:not(.blank-slate-for-grid) {
+        display: none;
       }
     }
   }
@@ -424,7 +426,9 @@
 
     /* Cover bubbles and cards on small viewports */
     @media (max-width: 639px) {
-      margin-inline: calc(-1 * var(--cards-gap) - var(--main-padding));
+      &:not(.cards--closed &) {
+        margin-inline: calc(-1 * var(--cards-gap) - var(--main-padding));
+      }
     }
 
     &, .cards__filter {
@@ -463,23 +467,7 @@
       font-size: clamp(0.6rem, 0.85cqi, 100px);
     }
 
-    .card__comments {
-      --column-gap: 0.8ch;
-
-      display: flex;
-      margin-block-end: calc(var(--block-space) * -1.7);
-      margin-inline-end: calc(var(--card-padding-inline) * -0.5);
-
-      .icon {
-        --icon-size: 1.6em;
-
-        color: var(--card-color);
-      }
-    }
-
     .card__steps {
-      --column-gap: 0.8ch;
-
       display: flex;
     }
 
@@ -488,6 +476,7 @@
     }
 
     .card__title {
+      line-height: 1.2;
       pointer-events: none;
     }
 
@@ -658,7 +647,6 @@
   /* On Deck (Not Now)
   /* ------------------------------------------------------------------------ */
 
-  .cards--closed,
   .cards--on-deck {
     --card-color: var(--color-ink-light) !important;
 
@@ -671,19 +659,12 @@
     }
   }
 
-  /* Closed (Done)
-  /* ------------------------------------------------------------------------ */
-
-  .cards--closed {
-
-  }
-
   /* Doing
   /* -------------------------------------------------------------------------- */
 
   /* Surface a mini bubble if there are cards with bubbles inside */
   .cards--considering:has(.bubble:not([hidden])) .cards__expander-title,
-  .cards--doing.is-collapsed:has(.bubble:not([hidden])) .cards__transition-container {
+  .cards--doing.is-collapsed:has(.bubble:not([hidden])) {
     --bubble-color: var(--card-color, oklch(var(--lch-blue-medium)));
     --bubble-shape: 54% 46% 61% 39% / 57% 49% 51% 43%;
 
@@ -698,21 +679,13 @@
       inline-size: 1em;
       inset: 0 0 auto auto;
       position: absolute;
-      translate: 20% -20%;
+      translate: 25% -25%;
       z-index: 1;
     }
+  }
 
-    /* Maybe column: position bubble relative to the title, not the container */
-    .cards--considering & {
-      overflow: visible;
-      position: relative;
-
-      &:before {
-        inset-block-start: 50%;
-        translate: 125% -75%;
-        z-index: -1;
-      }
-    }
+  .cards--considering:has(.bubble:not([hidden])) .cards__expander-title:before {
+    translate: 120% 50%;
   }
 
   /* Card column indicators
@@ -730,10 +703,8 @@
     text-transform: uppercase;
 
     @media (hover: hover) {
-      &:not(.card__column-name--current):hover {
-        --btn-background: color(from var(--column-color) srgb r g b / 0.15);
-
-        color: var(--column-color);
+      &:hover {
+        --btn-background: color(from var(--card-color) srgb r g b / 0.15);
       }
     }
   }
@@ -746,56 +717,6 @@
     @media (hover: hover) {
       &:hover {
         --btn-background: var(--card-color);
-      }
-    }
-  }
-
-  /* Mobile columns
-  /* -------------------------------------------------------------------------- */
-
-  .mobile-card-columns {
-    --column-gap: 8px;
-    --column-padding-expanded: calc(var(--column-gap) * 2);
-    --column-width-collapsed: 40px;
-    --progress-increment: var(--progress-max-width) / var(--progress-max-cards);
-    --progress-max-cards: 15; /* should match first geared pagination page size */
-    --progress-max-width: 100%;
-
-    padding-inline: 3vw;
-
-    /* Hide on larger devices with cursors */
-    @media (min-width: 520px) {
-      display: none;
-    }
-
-    .cards.is-collapsed {
-      inline-size: auto;
-      display: block;
-      padding-block: 0.5ch;
-
-      .cards__expander {
-        --gradient-direction: to right;
-
-        flex-direction: row;
-        inline-size: auto;
-
-        &:before {
-          block-size: 1px;
-          inline-size: 100%;
-          inset: 50% 0 auto;
-          translate: 0 -50%;
-        }
-
-        &:after {
-          block-size: var(--column-width-collapsed);
-          inline-size: calc(var(--column-width-collapsed) + var(--card-count) * var(--progress-increment));
-          margin-inline-start: 0;
-          max-inline-size: var(--progress-max-width);
-        }
-      }
-
-      .cards__expander-title {
-        writing-mode: revert;
       }
     }
   }
